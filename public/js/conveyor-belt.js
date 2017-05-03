@@ -31,6 +31,7 @@ var iot_service_link;
 
 var isConnected = false;
 var isManagedDevice = false;
+var reqIDs = {};
 window.msgCount = 0;
 
 // ********** TABLE OF CONTENTS **********
@@ -166,6 +167,43 @@ function managedDeviceRequest() {
     }
 }
 
+function rebootSuccessful() {
+    console.log("Reboot Successful");
+
+    if (isConnected) {
+        var topic = "iotdevice-1/response";
+
+        var payload = {
+            "rc": "202",
+            "reqId": reqIDs.reboot
+        };
+                
+        // Create an MQTT message object from the payload
+        var message = new Paho.MQTT.Message(JSON.stringify(payload));
+        message.destinationName = topic;
+
+        console.log("Attempting sending the reboot report");
+
+        try {
+            window.client.send(message);
+            
+            console.log("[%s] Published", new Date().getTime());
+
+            window.client.subscribe("iotdm-1/response");
+        } catch (err) {
+            console.error(err);
+
+            // If there is an error, set the "connection" indicator on the screen to "Disconnected"
+            isConnected = false;
+            
+            changeConnectionStatusImage("images/disconnected.svg");
+            document.getElementById("connection").innerHTML = "Disconnected";
+
+            setTimeout(connectDevice(), 1000);
+        }
+    }
+}
+
 // Once connected, this functions is called to publish MQTT events to the IoT Platform
 function publish(publishFields) {
     console.log(publishFields);
@@ -259,6 +297,8 @@ function onMessageArrived(message) {
 
   switch(message.destinationName) {
         case "iotdm-1/mgmt/initiate/device/reboot":
+            reqIDs["reboot"] = JSON.parse(message.payloadString).reqId;
+
             deviceReboot();
 
             break;
@@ -312,7 +352,28 @@ window.ondevicemotion = function(event) {
 // ***** 4. Animations/Interactions ***** //
 
 function deviceReboot() {
-    console.log("Device Reboot");
+    if ($("div.overlay").hasClass("hidden")) {
+        $("div.overlay").removeClass("hidden");
+    }
+
+    var percentage = 0;
+    $("div.overlay span#progress").html("(" + percentage + "%)");
+
+    var progressInterval = setInterval(function() {
+        percentage += 20;
+
+        $("div.overlay span#progress").html("(" + percentage + "%)");
+
+        if (percentage === 100) clearInterval(progressInterval);
+    }, 1000);
+
+    setTimeout(function() {
+        if (!$("div.overlay").hasClass("hidden")) {
+            $("div.overlay").addClass("hidden");
+        }
+
+        rebootSuccessful();
+    }, 5000);
 }
 
 
