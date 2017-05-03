@@ -30,6 +30,7 @@ var topic;
 var iot_service_link;
 
 var isConnected = false;
+var isManagedDevice = false;
 window.msgCount = 0;
 
 // ********** TABLE OF CONTENTS **********
@@ -62,6 +63,7 @@ function init() {
 
             // Set necessary fields for the MQTT Connection to the IoT Platform
             window.iot_host = response.org + ".messaging.internetofthings.ibmcloud.com";
+            console.log(window.iot_host);
             window.iot_port = 443;
             window.iot_clientid = "d:" + response.org+ ":" + deviceInfo.typeId + ":" + deviceInfo.deviceId;
             window.client = new Paho.MQTT.Client(window.iot_host, window.iot_port, window.iot_clientid);
@@ -122,6 +124,48 @@ function registerDevice() {
 // ******************* //
 // ***** 2. MQTT ***** //
 
+function managedDeviceRequest() {
+    console.log("Attempting the Managed Device Request");
+
+    if (isConnected) {
+        var topic = "iotdevice-1/mgmt/manage";
+
+        var payload = {
+            "d": {
+                "lifetime": 0,
+                "supports": {
+                    "deviceActions": true,
+                },
+            },
+            "reqId": String(Math.floor(1e15 + Math.random() * 9e15))
+        };
+        
+        // Create an MQTT message object from the payload
+        var message = new Paho.MQTT.Message(JSON.stringify(payload));
+        message.destinationName = topic;
+
+        console.log("Attempting sending the managed request");
+
+        try {
+            window.client.send(message);
+            
+            console.log("[%s] Published", new Date().getTime());
+
+            window.client.subscribe("iotdm-1/response");
+        } catch (err) {
+            console.error(err);
+
+            // If there is an error, set the "connection" indicator on the screen to "Disconnected"
+            isConnected = false;
+            
+            changeConnectionStatusImage("images/disconnected.svg");
+            document.getElementById("connection").innerHTML = "Disconnected";
+
+            setTimeout(connectDevice(), 1000);
+        }
+    }
+}
+
 // Once connected, this functions is called to publish MQTT events to the IoT Platform
 function publish(publishFields) {
     console.log(publishFields);
@@ -165,6 +209,7 @@ function publish(publishFields) {
 
             // If there is an error, set the "connection" indicator on the screen to "Disconnected"
             isConnected = false;
+            
             changeConnectionStatusImage("images/disconnected.svg");
             document.getElementById("connection").innerHTML = "Disconnected";
 
@@ -180,10 +225,14 @@ function onConnectSuccess() {
 
     if ($("div#publishedMessage.hidden").hasClass("hidden")) $("div#publishedMessage.hidden").removeClass("hidden");
 
+    window.client.subscribe("iotdm-1/mgmt/initiate/device/reboot");
+
     isConnected = true;
     changeConnectionStatusImage("images/connected.svg");
     document.getElementById("connection").innerHTML = "Connected" +
                         (iot_service_link !== undefined ? (" to <a href='" + iot_service_link.url + "' target='_blank'>" + iot_service_link.serviceName + "</a>") : "");
+
+    managedDeviceRequest();
 
     var publishFields = {
         running: stop ? false : true,
@@ -204,6 +253,18 @@ function onConnectFailure(error) {
     setTimeout(connectDevice(), 1000);
 }
 
+// called when a message arrives
+function onMessageArrived(message) {
+  console.log("onMessageArrived:" + message.payloadString, message.destinationName);
+
+  switch(message.destinationName) {
+        case "iotdm-1/mgmt/initiate/device/reboot":
+            deviceReboot();
+
+            break;
+        default:
+    }
+}
 
 // Connect to MQTT
 function connectDevice() {
@@ -214,6 +275,8 @@ function connectDevice() {
     changeConnectionStatusImage("images/connecting.svg");
     document.getElementById("connection").innerHTML = "Connecting";
     console.log("Connecting device to IBM Watson IoT Platform...");
+    
+    window.client.onMessageArrived = onMessageArrived;
 
     // Initiate the MQTT connection using the password set above in line 8
     window.client.connect({
@@ -247,6 +310,12 @@ window.ondevicemotion = function(event) {
 
 // ************************************** //
 // ***** 4. Animations/Interactions ***** //
+
+function deviceReboot() {
+    console.log("Device Reboot");
+}
+
+
 function dropbox(index) {
     var firefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
 
